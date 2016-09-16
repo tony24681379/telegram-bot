@@ -10,19 +10,26 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"github.com/mrd0ll4r/tbotapi"
 	"github.com/mrd0ll4r/tbotapi/examples/boilerplate"
 )
 
 func main() {
 	apiToken := "260002715:AAE6BGznYNTeLN-3V8pz1XwfOKsYoa8_nV4"
+	db, err := gorm.Open("sqlite3", "test.db")
+	if err != nil {
+		panic("failed to connect database")
+	}
+	defer db.Close()
 
 	// Note: For this example to work, you'll have to enable inline queries for your bot (chat with @BotFather).
 
 	b := &Bot{
-		Language:      "English",
-		SubscribeList: make(map[string]bool),
+		Language: "English",
 	}
+	InitDB(db)
 	updateFunc := func(update tbotapi.Update, api *tbotapi.TelegramBotAPI) {
 		switch update.Type() {
 		case tbotapi.MessageUpdate:
@@ -36,16 +43,14 @@ func main() {
 			// Note: Bots cannot receive from channels, at least no text messages. So we don't have to distinguish anything here.
 
 			// Display the incoming message.
-			// msg.Chat implements fmt.Stringer, so it'll display nicely.
-			// We know it's a text message, so we can safely use the Message.Text pointer.
 			fmt.Printf("<-%d, From:\t%s, Text: %s \n", msg.ID, msg.Chat, *msg.Text)
 
 			msgs := strings.Split(*msg.Text, " ")
 			methodName := msgs[0]
 			method := reflect.ValueOf(b).MethodByName(methodName)
 			if method.IsValid() {
-				exec := method.Interface().(func(...string) string)
-				outMsg, err := api.NewOutgoingMessage(tbotapi.NewRecipientFromChat(msg.Chat), exec(msgs[1:]...)).Send()
+				exec := method.Interface().(func(*gorm.DB, ...string) string)
+				outMsg, err := api.NewOutgoingMessage(tbotapi.NewRecipientFromChat(msg.Chat), exec(db, msgs[1:]...)).SetHTML(true).Send()
 				if err != nil {
 					fmt.Printf("Error sending: %s\n", err)
 					return
