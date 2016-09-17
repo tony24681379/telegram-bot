@@ -14,6 +14,7 @@ import (
 //Bot struct
 type Bot struct {
 	SubscribeList map[string]time.Time
+	Commands      map[string]string
 }
 
 //updateUser check user Language and SubscribeList
@@ -84,8 +85,10 @@ func (b Bot) Topics(db *gorm.DB, userID int) string {
 
 //Tellme shows topic
 func (b Bot) Tellme(db *gorm.DB, userID int, args ...string) string {
+	if len(args) == 0 {
+		return "please enter the topic"
+	}
 	result := ""
-
 	user := b.checkUser(db, userID)
 	topic, isExist := b.findTopic(db, user, args[0])
 
@@ -108,6 +111,9 @@ func (b Bot) Tellme(db *gorm.DB, userID int, args ...string) string {
 
 //Subscribe the topic
 func (b Bot) Subscribe(db *gorm.DB, userID int, args ...string) string {
+	if len(args) == 0 {
+		return "please enter the topic"
+	}
 	user := b.checkUser(db, userID)
 	topic, isExist := b.findTopic(db, user, args[0])
 	if isExist {
@@ -131,6 +137,9 @@ func (b Bot) Subscribe(db *gorm.DB, userID int, args ...string) string {
 
 //UnSubscribe the topic
 func (b Bot) UnSubscribe(db *gorm.DB, userID int, args ...string) string {
+	if len(args) == 0 {
+		return "please enter the topic"
+	}
 	user := b.checkUser(db, userID)
 	topic, isExist := b.findTopic(db, user, args[0])
 	if isExist {

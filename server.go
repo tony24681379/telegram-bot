@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
@@ -29,6 +28,14 @@ func main() {
 	InitDB(db)
 	b := &Bot{
 		SubscribeList: make(map[string]time.Time),
+		Commands: map[string]string{
+			"topics":      "List out the topic that our bot support",
+			"tellme":      "Echo back the current info in forecast feed",
+			"subscribe":   "The bot will send message to the user on new warning",
+			"unsubscribe": "The bot will not send update to user from now on",
+			"English":     "The bot will send content in English to user",
+			"繁體中文":        "The bot will send content in traditional chinese to user",
+			"简体中文":        "The bot will send content in simplified chinese to user"},
 	}
 	b.InitSubscribeList(db)
 
@@ -49,6 +56,10 @@ func main() {
 
 			result := ""
 			msgs := strings.Split(*msg.Text, " ")
+
+			if len(msgs) > 1 && msgs[0] == "@tony24681379_bot" {
+				msgs = msgs[1:]
+			}
 			methodName := msgs[0]
 			if methodName == "topics" {
 				result = b.Topics(db, msg.From.ID)
@@ -80,14 +91,15 @@ func main() {
 			fmt.Printf("<-%s (query), From:\t%s, Query: %s \n", query.ID, query.From, query.Query)
 			var results []tbotapi.InlineQueryResult
 
-			for i, s := range query.Query {
-				if len(results) >= 50 {
-					// The API accepts up to 50 results.
-					break
+			if query.Query == "" {
+				for command, info := range b.Commands {
+					results = append(results, tbotapi.NewInlineQueryResultArticle(command, command, info))
 				}
-				if !unicode.IsSpace(s) {
-					// Don't set mandatory fields to whitespace.
-					results = append(results, tbotapi.NewInlineQueryResultArticle(fmt.Sprint(i), string(s), string(s)))
+			} else {
+				for command, info := range b.Commands {
+					if strings.Contains(command, query.Query) {
+						results = append(results, tbotapi.NewInlineQueryResultArticle(command, command, info))
+					}
 				}
 			}
 
