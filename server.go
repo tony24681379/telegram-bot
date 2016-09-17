@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/jinzhu/gorm"
@@ -25,10 +26,12 @@ func main() {
 
 	// Note: For this example to work, you'll have to enable inline queries for your bot (chat with @BotFather).
 
-	b := &Bot{
-		Language: "English",
-	}
 	InitDB(db)
+	b := &Bot{
+		SubscribeList: make(map[string]time.Time),
+	}
+	b.InitSubscribeList(db)
+
 	updateFunc := func(update tbotapi.Update, api *tbotapi.TelegramBotAPI) {
 		switch update.Type() {
 		case tbotapi.MessageUpdate:
@@ -53,6 +56,8 @@ func main() {
 				result = b.Tellme(db, msg.From.ID, msgs[1:]...)
 			} else if methodName == "subscribe" {
 				result = b.Subscribe(db, msg.From.ID, msgs[1:]...)
+			} else if methodName == "unsubscribe" {
+				result = b.UnSubscribe(db, msg.From.ID, msgs[1:]...)
 			} else if methodName == "English" {
 				result = b.English(db, msg.From.ID)
 			} else if methodName == "繁體中文" {

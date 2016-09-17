@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/jinzhu/gorm"
@@ -11,7 +13,7 @@ import (
 
 //Bot struct
 type Bot struct {
-	Language string
+	SubscribeList map[string]time.Time
 }
 
 //updateUser check user Language and SubscribeList
@@ -22,14 +24,45 @@ func (b Bot) updateUser(db *gorm.DB, userID int, language, answer string) User {
 	return user
 }
 
+//UpdateSubscribeList
+func (b Bot) UpdateSubscribeList(db *gorm.DB) {
+	var topics []Topic
+	db.Find(&topics)
+	for _, topic := range topics {
+		fp := gofeed.NewParser()
+		feed, _ := fp.ParseURL(topic.Link)
+		b.SubscribeList[topic.Topic+topic.Language] = *feed.PublishedParsed
+		if b.SubscribeList[topic.Topic+topic.Language] != topic.PublishDate {
+			topic.PublishDate = *feed.PublishedParsed
+		}
+	}
+}
+
+//InitSubscribeList
+func (b Bot) InitSubscribeList(db *gorm.DB) {
+	var topics []Topic
+	db.Find(&topics)
+	for _, topic := range topics {
+		b.SubscribeList[topic.Topic+topic.Language] = topic.PublishDate
+	}
+}
+
 //checkUser
 func (b Bot) checkUser(db *gorm.DB, userID int) User {
 	var user User
-	if err := db.Where(User{UserID: userID}).First(&user).Error; err != nil {
+	if db.Where(User{UserID: userID}).First(&user).RecordNotFound() {
 		user = User{UserID: userID, Language: "English", Answer: "OK"}
 		db.Create(&user)
 	}
 	return user
+}
+
+func (b Bot) findTopic(db *gorm.DB, user User, topicName string) (Topic, bool) {
+	var topic Topic
+	if db.Where("topic = ? AND language = ?", topicName, user.Language).Find(&topic).RecordNotFound() {
+		return topic, false
+	}
+	return topic, true
 }
 
 //Topics list topics
@@ -54,34 +87,57 @@ func (b Bot) Tellme(db *gorm.DB, userID int, args ...string) string {
 	result := ""
 
 	user := b.checkUser(db, userID)
+	topic, isExist := b.findTopic(db, user, args[0])
 
-	var topic Topic
-	db.Where("topic = ? AND language = ?", args[0], user.Language).Find(&topic)
+	if isExist {
+		fp := gofeed.NewParser()
+		feed, _ := fp.ParseURL(topic.Link)
+		result += feed.Title
 
-	fp := gofeed.NewParser()
-	feed, _ := fp.ParseURL(topic.Link)
-	result += feed.Title
+		doc, err := goquery.NewDocument(topic.Link)
+		if err != nil {
+			log.Fatal(err)
+		}
+		result += doc.Find("description").Text()
 
-	doc, err := goquery.NewDocument(topic.Link)
-	if err != nil {
-		log.Fatal(err)
+		result = strings.Replace(result, "]]>", "", -1)
+		return result
 	}
-	result += doc.Find("description").Text()
-
-	result = strings.Replace(result, "]]>", "", -1)
-	return result
+	return "topic not found"
 }
 
 //Subscribe the topic
 func (b Bot) Subscribe(db *gorm.DB, userID int, args ...string) string {
 	user := b.checkUser(db, userID)
-	return user.Answer
+	topic, isExist := b.findTopic(db, user, args[0])
+	if isExist {
+		fp := gofeed.NewParser()
+		feed, _ := fp.ParseURL(topic.Link)
+		publishDate := time.Now()
+		for _, item := range feed.Items {
+			if item.Published != "" {
+				fmt.Println(feed.Published)
+				publishDate = *item.PublishedParsed
+			}
+		}
+		var subscribe Subscribe
+		db.Where(Subscribe{TopicID: topic.Topic}).
+			Attrs(Subscribe{User: userID, TopicID: topic.Topic, PublishDate: publishDate}).
+			FirstOrCreate(&subscribe)
+		return user.Answer
+	}
+	return "error"
 }
 
 //UnSubscribe the topic
 func (b Bot) UnSubscribe(db *gorm.DB, userID int, args ...string) string {
 	user := b.checkUser(db, userID)
-	return user.Answer
+	topic, isExist := b.findTopic(db, user, args[0])
+	if isExist {
+		db.Unscoped().Where(Subscribe{User: userID, TopicID: topic.Topic}).Delete(Subscribe{})
+		return user.Answer
+	}
+	return "error"
 }
 
 //TChinese changes language to T_chinese
