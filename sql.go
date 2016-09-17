@@ -6,17 +6,17 @@ import (
 
 type Topic struct {
 	gorm.Model
-	Topic        string
-	EnglishLink  string
-	TChineseLink string
-	SChineseLink string
+	Language string
+	Topic    string
+	Link     string
 }
 
 type User struct {
 	gorm.Model
-	User      uint
+	UserID    int
 	Language  string
-	Subscribe Subscribe
+	Answer    string
+	Subscribe []Subscribe
 }
 
 type Subscribe struct {
@@ -29,15 +29,33 @@ func InitDB(db *gorm.DB) {
 	db.AutoMigrate(&Topic{})
 	db.AutoMigrate(&User{})
 	db.AutoMigrate(&Subscribe{})
+	createData(db)
 }
 
 func createData(db *gorm.DB) {
-	db.Create(&Topic{Topic: "current",
-		EnglishLink:  "http://rss.weather.gov.hk/rss/CurrentWeather.xml",
-		TChineseLink: "http://rss.weather.gov.hk/rss/CurrentWeather_uc.xml",
-		SChineseLink: "http://gbrss.weather.gov.hk/rss/CurrentWeather_uc.xml"})
-	db.Create(&Topic{Topic: "warning",
-		EnglishLink:  "http://rss.weather.gov.hk/rss/WeatherWarningBulletin.xml",
-		TChineseLink: "http://rss.weather.gov.hk/rss/WeatherWarningBulletin_uc.xml",
-		SChineseLink: "http://gbrss.weather.gov.hk/rss/WeatherWarningBulletin_uc.xml"})
+	db.Create(&Topic{
+		Language: "English",
+		Topic:    "current",
+		Link:     "http://rss.weather.gov.hk/rss/CurrentWeather.xml"})
+	db.Create(&Topic{
+		Language: "TChinese",
+		Topic:    "天氣報告",
+		Link:     "http://rss.weather.gov.hk/rss/CurrentWeather_uc.xml"})
+	db.Create(&Topic{
+		Language: "SChinese",
+		Topic:    "天气报告",
+		Link:     "http://gbrss.weather.gov.hk/rss/CurrentWeather_uc.xml"})
+
+	db.Create(&Topic{
+		Language: "English",
+		Topic:    "warning",
+		Link:     "http://rss.weather.gov.hk/rss/WeatherWarningBulletin.xml"})
+	db.Create(&Topic{
+		Language: "TChinese",
+		Topic:    "警告",
+		Link:     "http://rss.weather.gov.hk/rss/WeatherWarningBulletin_uc.xml"})
+	db.Create(&Topic{
+		Language: "SChinese",
+		Topic:    "警告",
+		Link:     "http://gbrss.weather.gov.hk/rss/WeatherWarningBulletin_uc.xml"})
 }

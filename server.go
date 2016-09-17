@@ -6,19 +6,18 @@ package main
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"unicode"
 
 	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"github.com/mrd0ll4r/tbotapi"
 	"github.com/mrd0ll4r/tbotapi/examples/boilerplate"
 )
 
 func main() {
 	apiToken := "260002715:AAE6BGznYNTeLN-3V8pz1XwfOKsYoa8_nV4"
-	db, err := gorm.Open("sqlite3", "test.db")
+	db, err := gorm.Open("mysql", "root:test@/test?charset=utf8mb4&parseTime=True&loc=Local")
 	if err != nil {
 		panic("failed to connect database")
 	}
@@ -45,22 +44,27 @@ func main() {
 			// Display the incoming message.
 			fmt.Printf("<-%d, From:\t%s, Text: %s \n", msg.ID, msg.Chat, *msg.Text)
 
+			result := ""
 			msgs := strings.Split(*msg.Text, " ")
 			methodName := msgs[0]
-			method := reflect.ValueOf(b).MethodByName(methodName)
-			if method.IsValid() {
-				exec := method.Interface().(func(*gorm.DB, ...string) string)
-				outMsg, err := api.NewOutgoingMessage(tbotapi.NewRecipientFromChat(msg.Chat), exec(db, msgs[1:]...)).SetHTML(true).Send()
-				if err != nil {
-					fmt.Printf("Error sending: %s\n", err)
-					return
-				}
-				fmt.Printf("->%d, To:\t%s, Text: %s\n", outMsg.Message.ID, outMsg.Message.Chat, *outMsg.Message.Text)
-				return
+			if methodName == "topics" {
+				result = b.Topics(db, msg.From.ID)
+			} else if methodName == "tellme" {
+				result = b.Tellme(db, msg.From.ID, msgs[1:]...)
+			} else if methodName == "subscribe" {
+				result = b.Subscribe(db, msg.From.ID, msgs[1:]...)
+			} else if methodName == "English" {
+				result = b.English(db, msg.From.ID)
+			} else if methodName == "繁體中文" {
+				result = b.TChinese(db, msg.From.ID)
+			} else if methodName == "简体中文" {
+				result = b.SChinese(db, msg.From.ID)
 			}
 
-			outMsg, err := api.NewOutgoingMessage(tbotapi.NewRecipientFromChat(msg.Chat), *msg.Text).Send()
-
+			if result == "" {
+				result = *msg.Text
+			}
+			outMsg, err := api.NewOutgoingMessage(tbotapi.NewRecipientFromChat(msg.Chat), result).SetHTML(true).Send()
 			if err != nil {
 				fmt.Printf("Error sending: %s\n", err)
 				return
