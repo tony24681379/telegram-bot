@@ -8,8 +8,8 @@ import (
 
 type Topic struct {
 	gorm.Model
-	Language    string
 	Topic       string
+	Language    string
 	Link        string
 	PublishDate time.Time
 }

@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -36,8 +37,9 @@ func main() {
 			"English":     "The bot will send content in English to user",
 			"繁體中文":        "The bot will send content in traditional chinese to user",
 			"简体中文":        "The bot will send content in simplified chinese to user"},
+		Topics: []Topic{},
 	}
-	b.InitSubscribeList(db)
+	b.InitBotStatus(db)
 
 	updateFunc := func(update tbotapi.Update, api *tbotapi.TelegramBotAPI) {
 		switch update.Type() {
@@ -54,7 +56,7 @@ func main() {
 			// Display the incoming message.
 			fmt.Printf("<-%d, From:\t%s, Text: %s \n", msg.ID, msg.Chat, *msg.Text)
 
-			result := ""
+			message := ""
 			msgs := strings.Split(*msg.Text, " ")
 
 			if len(msgs) > 1 && msgs[0] == "@tony24681379_bot" {
@@ -62,25 +64,26 @@ func main() {
 			}
 			methodName := msgs[0]
 			if methodName == "topics" {
-				result = b.Topics(db, msg.From.ID)
+				message = b.ListTopics(db, msg.From.ID)
 			} else if methodName == "tellme" {
-				result = b.Tellme(db, msg.From.ID, msgs[1:]...)
+				message = b.Tellme(db, msg.From.ID, msgs[1:]...)
 			} else if methodName == "subscribe" {
-				result = b.Subscribe(db, msg.From.ID, msgs[1:]...)
+				message = b.Subscribe(db, msg.From.ID, msgs[1:]...)
 			} else if methodName == "unsubscribe" {
-				result = b.UnSubscribe(db, msg.From.ID, msgs[1:]...)
+				message = b.UnSubscribe(db, msg.From.ID, msgs[1:]...)
 			} else if methodName == "English" {
-				result = b.English(db, msg.From.ID)
+				message = b.English(db, msg.From.ID)
 			} else if methodName == "繁體中文" {
-				result = b.TChinese(db, msg.From.ID)
+				message = b.TChinese(db, msg.From.ID)
 			} else if methodName == "简体中文" {
-				result = b.SChinese(db, msg.From.ID)
+				message = b.SChinese(db, msg.From.ID)
 			}
 
-			if result == "" {
-				result = *msg.Text
+			if message == "" {
+				message = *msg.Text
 			}
-			outMsg, err := api.NewOutgoingMessage(tbotapi.NewRecipientFromChat(msg.Chat), result).SetHTML(true).Send()
+
+			outMsg, err := api.NewOutgoingMessage(tbotapi.NewRecipientFromChat(msg.Chat), message).SetHTML(true).Send()
 			if err != nil {
 				fmt.Printf("Error sending: %s\n", err)
 				return
@@ -115,6 +118,17 @@ func main() {
 		}
 	}
 
+	api, err := tbotapi.New(apiToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var ticker = time.NewTicker(20 * time.Second)
+	go func() {
+		for range ticker.C {
+			b.UpdateSubscribeList(db, api)
+		}
+	}()
+
 	// Run the bot, this will block.
-	boilerplate.RunBot(apiToken, updateFunc, "InlineQuery", "Demonstrates inline queries by splitting words")
+	boilerplate.RunBot(apiToken, updateFunc, "RSS", "Subscribe RSS")
 }
