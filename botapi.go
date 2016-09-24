@@ -26,14 +26,6 @@ type RSSData struct {
 	PublishDate time.Time
 }
 
-//updateUser check user Language and SubscribeList
-func (b *Bot) updateUser(db *gorm.DB, userID int, language, answer string) User {
-	var user User
-	db.Model(&user).Where(User{UserID: userID}).
-		Updates(User{UserID: userID, Language: language, Answer: answer})
-	return user
-}
-
 //UpdateSubscribeList pull the RSS and send it
 func (b *Bot) UpdateSubscribeList(db *gorm.DB, api *tbotapi.TelegramBotAPI) {
 	for _, topic := range b.Topics {
@@ -42,8 +34,7 @@ func (b *Bot) UpdateSubscribeList(db *gorm.DB, api *tbotapi.TelegramBotAPI) {
 			topic.PublishDate = rssData.PublishDate
 			var updateTopic Topic
 			if b.sendUpdateToSubscribeUser(db, api, topic.Topic, topic.Language, rssData) {
-				db.Model(&updateTopic).Where(Topic{Topic: topic.Topic, Language: topic.Language}).
-					Update(Topic{PublishDate: rssData.PublishDate})
+				updateTopic.UpdatePublishDate(db, rssData)
 			}
 			b.SubscribeList[topic.Topic+topic.Language] = rssData.PublishDate
 		}
@@ -52,12 +43,9 @@ func (b *Bot) UpdateSubscribeList(db *gorm.DB, api *tbotapi.TelegramBotAPI) {
 
 //sendUpdateToSubscribeUser send message to user who subscribe the topics
 func (b *Bot) sendUpdateToSubscribeUser(db *gorm.DB, api *tbotapi.TelegramBotAPI, topic, language string, rssData *RSSData) bool {
-	var users []User
+	var users Users
 	var subscribe Subscribe
-	if !db.Joins("JOIN subscribes s on s.user = user_id").
-		Where("topic_id = ? AND language = ? AND publish_date <> ?", topic, language, rssData.PublishDate).
-		Find(&users).RecordNotFound() {
-
+	if users.FindUpdateSubscribeUser(db, topic, language, rssData) {
 		for _, user := range users {
 			outMsg, err := api.NewOutgoingMessage(tbotapi.NewChatRecipient(user.UserID), rssData.Title+rssData.Description).SetHTML(true).Send()
 			if err != nil {
@@ -65,8 +53,7 @@ func (b *Bot) sendUpdateToSubscribeUser(db *gorm.DB, api *tbotapi.TelegramBotAPI
 				return false
 			}
 			fmt.Printf("->%d, To:\t%s, Text: %s\n", outMsg.Message.ID, outMsg.Message.Chat, *outMsg.Message.Text)
-			db.Model(&subscribe).Where(Subscribe{User: user.UserID, TopicID: topic}).
-				Update(Subscribe{PublishDate: rssData.PublishDate})
+			subscribe.UpdatePublishDate(db, user, rssData, topic)
 		}
 	}
 	return true
@@ -80,24 +67,6 @@ func (b *Bot) InitBotStatus(db *gorm.DB) {
 		b.SubscribeList[topic.Topic+topic.Language] = topic.PublishDate
 		b.Topics = append(b.Topics, topic)
 	}
-}
-
-//checkUser
-func (b *Bot) checkUser(db *gorm.DB, userID int) User {
-	var user User
-	if db.Where(User{UserID: userID}).First(&user).RecordNotFound() {
-		user = User{UserID: userID, Language: "English", Answer: "OK"}
-		db.Create(&user)
-	}
-	return user
-}
-
-func (b Bot) findTopic(db *gorm.DB, user User, topicName string) (Topic, bool) {
-	var topic Topic
-	if db.Where("topic = ? AND language = ?", topicName, user.Language).Find(&topic).RecordNotFound() {
-		return topic, false
-	}
-	return topic, true
 }
 
 func (b *Bot) getRSSData(topic Topic) *RSSData {
@@ -128,10 +97,11 @@ func (b *Bot) getRSSData(topic Topic) *RSSData {
 
 //ListTopics list topics
 func (b *Bot) ListTopics(db *gorm.DB, userID int) string {
-	user := b.checkUser(db, userID)
+	var user User
+	var topics Topics
+	user.CheckUser(db, userID)
+	topics.ListTopic(db, user.Language)
 
-	var topics []Topic
-	db.Select("topic").Where("language = ?", user.Language).Find(&topics)
 	result := ""
 	for i, v := range topics {
 		if i == 0 {
@@ -148,9 +118,11 @@ func (b *Bot) Tellme(db *gorm.DB, userID int, args ...string) string {
 	if len(args) == 0 {
 		return "please enter the topic"
 	}
-	user := b.checkUser(db, userID)
-	topic, isExist := b.findTopic(db, user, args[0])
+	var user User
+	var topic Topic
+	user.CheckUser(db, userID)
 
+	isExist := topic.FindTopic(db, user, args[0])
 	if isExist {
 		rssData := b.getRSSData(topic)
 		return rssData.Title + rssData.Description
@@ -163,15 +135,15 @@ func (b *Bot) Subscribe(db *gorm.DB, userID int, args ...string) string {
 	if len(args) == 0 {
 		return "please enter the topic"
 	}
-	user := b.checkUser(db, userID)
-	topic, isExist := b.findTopic(db, user, args[0])
+	var user User
+	var topic Topic
+	var subscribe Subscribe
+	user.CheckUser(db, userID)
+
+	isExist := topic.FindTopic(db, user, args[0])
 	if isExist {
 		rssData := b.getRSSData(topic)
-
-		var subscribe Subscribe
-		db.Where(Subscribe{TopicID: topic.Topic}).
-			Attrs(Subscribe{User: userID, TopicID: topic.Topic, PublishDate: rssData.PublishDate}).
-			FirstOrCreate(&subscribe)
+		subscribe.Subscribe(db, userID, topic, rssData)
 		return user.Answer
 	}
 	return "error"
@@ -182,10 +154,15 @@ func (b *Bot) UnSubscribe(db *gorm.DB, userID int, args ...string) string {
 	if len(args) == 0 {
 		return "please enter the topic"
 	}
-	user := b.checkUser(db, userID)
-	topic, isExist := b.findTopic(db, user, args[0])
+	var user User
+	var topic Topic
+	var subscribe Subscribe
+
+	user.CheckUser(db, userID)
+
+	isExist := topic.FindTopic(db, user, args[0])
 	if isExist {
-		db.Unscoped().Where(Subscribe{User: userID, TopicID: topic.Topic}).Delete(Subscribe{})
+		subscribe.UnSubscribe(db, userID, topic)
 		return user.Answer
 	}
 	return "error"
@@ -193,18 +170,21 @@ func (b *Bot) UnSubscribe(db *gorm.DB, userID int, args ...string) string {
 
 //TChinese changes language to T_chinese
 func (b *Bot) TChinese(db *gorm.DB, userID int) string {
-	b.updateUser(db, userID, "TChinese", "知道了")
+	var user User
+	user.UpdateUser(db, userID, "TChinese", "知道了")
 	return "繁體中文"
 }
 
 //SChinese changes language to S_chinese
 func (b *Bot) SChinese(db *gorm.DB, userID int) string {
-	b.updateUser(db, userID, "SChinese", "知")
+	var user User
+	user.UpdateUser(db, userID, "SChinese", "知")
 	return "简体中文"
 }
 
 //English changes language to English
 func (b *Bot) English(db *gorm.DB, userID int) string {
-	b.updateUser(db, userID, "English", "OK")
+	var user User
+	user.UpdateUser(db, userID, "English", "OK")
 	return "English"
 }
